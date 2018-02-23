@@ -13,6 +13,7 @@ def log(sql, args=()):
 # 创建一个全局的连接池，每个 HTTP 请求都可以从连接池中直接获取数据库连接，使用连接池的好处是不必频繁打开关闭数据库连接，而是尽量复用
 async def create_pool(loop, **kw):
     logging.info('create database connection pool...')
+    # 全局变量 __pool
     global __pool
     __pool = await aiomysql.create_pool(
         host=kw.get('host', 'localhost'),
@@ -20,13 +21,16 @@ async def create_pool(loop, **kw):
         user=kw['user'],
         password=kw['password'],
         db=kw['db'],
-        charset=kw.get('charset', 'utf8'),
+        charset=kw.get('charset', 'utf8'),  # 注意是utf8
         autocommit=kw.get('autocommit', True),
         maxsize=kw.get('maxsize', 10),
         minsize=kw.get('minsize', 1),
+
+        # 接收一个event_loop实例
         loop=loop
     )
 
+# 用于执行 SELECT 语句的函数
 async def select(sql, args, size=None):
     log(sql, args)
     global __pool
@@ -34,7 +38,7 @@ async def select(sql, args, size=None):
         # DictCursor 表示返回为字典表示的记录
         async with conn.cursor(aiomysql.DictCursor) as cur:
             # execute 执行单条sql语句，将传入的字符串当做命令执行
-            #  SQL语句的占位符是?，而MySQL的占位符是%s，需要替换
+            # SQL语句的占位符是?，而MySQL的占位符是%s，需要替换
             await cur.execute(sql.replace('?', '%s'), args or ())
             # 如果传入size参数，就通过 fetchmany() 获取最多指定数量的记录，否则，通过 fetchall() 获取所有记录
             if size:
@@ -44,6 +48,7 @@ async def select(sql, args, size=None):
         logging.info('rows returned: %s' % len(rs))
         return rs
 
+# 要执行 INSERT、UPDATE、DELETE 语句，可以定义一个通用的execute()函数，因为这3种SQL的执行都需要相同的参数，以及返回一个整数表示影响的行数
 # execute() 函数和 select() 函数所不同的是，cursor 对象不返回结果集，而是通过 rowcount 返回结果数。
 async def execute(sql, args, autocommit=True):
     log(sql)
@@ -140,6 +145,7 @@ class ModelMetaclass(type):
         attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
         return type.__new__(cls, name, bases, attrs)
 
+# 所有 ORM 映射的基类 Model，继承自 dict
 class Model(dict, metaclass=ModelMetaclass):
 
     def __init__(self, **kw):
